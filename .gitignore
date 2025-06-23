@@ -47,7 +47,8 @@ Thumbs.db
 # Jupyter
 .ipynb_checkpoints/
 
-# Model files (optional - comment out if you want to track models)
+# Model files (keep models for deployment)
+# Uncomment to ignore models:
 # *.pkl
 # *.joblib
 
