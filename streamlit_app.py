@@ -1,8 +1,8 @@
 """
-Term Deposit Subscription Predictor - Simple Streamlit Dashboard
-==============================================================
+Term Deposit Subscription Predictor - Full-Featured Streamlit Dashboard
+======================================================================
 Interactive dashboard for exploring bank marketing data and predictions
-Uses matplotlib and seaborn for visualizations (no plotly dependencies)
+Includes Dashboard, Data Explorer, Predictions, and Model Performance pages
 """
 
 import streamlit as st
@@ -14,6 +14,9 @@ import joblib
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -60,56 +63,81 @@ def load_data():
     try:
         df = pd.read_csv('data/bank-additional-full.csv', sep=';')
         return df
-    except FileNotFoundError:
-        st.error("Data file not found. Please ensure 'data/bank-additional-full.csv' exists.")
-        return None
+    except:
+        st.warning("⚠️ Dataset not found. Creating demo data...")
+        # Create demo data
+        np.random.seed(42)
+        n_samples = 1000
+        
+        demo_data = {
+            'age': np.random.randint(18, 80, n_samples),
+            'job': np.random.choice(['admin.', 'technician', 'management', 'student', 'retired'], n_samples),
+            'marital': np.random.choice(['single', 'married', 'divorced'], n_samples),
+            'education': np.random.choice(['university.degree', 'high.school', 'basic.9y'], n_samples),
+            'default': ['no'] * n_samples,
+            'housing': np.random.choice(['yes', 'no'], n_samples),
+            'loan': np.random.choice(['no', 'yes'], n_samples),
+            'contact': np.random.choice(['cellular', 'telephone'], n_samples),
+            'month': np.random.choice(['may', 'jun', 'jul', 'aug'], n_samples),
+            'day_of_week': np.random.choice(['mon', 'tue', 'wed', 'thu', 'fri'], n_samples),
+            'duration': np.random.randint(100, 500, n_samples),
+            'campaign': np.random.randint(1, 5, n_samples),
+            'pdays': [999] * int(0.8*n_samples) + list(np.random.randint(1, 30, int(0.2*n_samples))),
+            'previous': np.random.randint(0, 3, n_samples),
+            'poutcome': np.random.choice(['nonexistent', 'success', 'failure'], n_samples),
+            'emp.var.rate': np.random.normal(1.1, 0.5, n_samples),
+            'cons.price.idx': np.random.normal(93.5, 1, n_samples),
+            'cons.conf.idx': np.random.normal(-36, 5, n_samples),
+            'euribor3m': np.random.normal(4.8, 0.5, n_samples),
+            'nr.employed': np.random.normal(5191, 100, n_samples),
+            'y': np.random.choice(['no', 'yes'], n_samples, p=[0.89, 0.11])
+        }
+        
+        return pd.DataFrame(demo_data)
 
 @st.cache_resource
 def load_or_train_model(df):
-    """Load existing model or train a new one for Streamlit Cloud"""
+    """Load existing model or train a new one"""
     try:
         model = joblib.load('models/model.pkl')
         return model
-    except (FileNotFoundError, Exception):
-        st.warning("Pre-trained model not found. Training a new model...")
-        return train_model_online(df)
-
-def train_model_online(df):
-    """Train model on the fly for Streamlit Cloud"""
-    # Prepare data
-    X = df.drop('y', axis=1)
-    y = df['y'].map({'yes': 1, 'no': 0})
-    
-    # Identify column types
-    numerical_cols = X.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    categorical_cols = X.select_dtypes(include=['object']).columns.tolist()
-    
-    # Create preprocessor
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ('num', StandardScaler(), numerical_cols),
-            ('cat', OneHotEncoder(drop='first', handle_unknown='ignore'), categorical_cols)
-        ]
-    )
-    
-    # Create and train pipeline
-    model = Pipeline([
-        ('preprocessor', preprocessor),
-        ('classifier', RandomForestClassifier(random_state=42, n_estimators=50))  # Smaller for faster training
-    ])
-    
-    # Split and train
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-    model.fit(X_train, y_train)
-    
-    # Calculate metrics for display
-    y_pred = model.predict(X_test)
-    accuracy = accuracy_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred)
-    
-    st.success(f"✅ Model trained successfully! Accuracy: {accuracy:.1%}, F1: {f1:.1%}")
-    
-    return model
+    except:
+        st.info("🔄 Training new model...")
+        
+        # Prepare data
+        X = df.drop('y', axis=1)
+        y = (df['y'] == 'yes').astype(int)
+        
+        # Define preprocessing
+        categorical_cols = X.select_dtypes(include=['object']).columns.tolist()
+        numerical_cols = X.select_dtypes(include=['number']).columns.tolist()
+        
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ('num', StandardScaler(), numerical_cols),
+                ('cat', OneHotEncoder(drop='first', handle_unknown='ignore'), categorical_cols)
+            ]
+        )
+        
+        # Create pipeline
+        model = Pipeline([
+            ('preprocessor', preprocessor),
+            ('classifier', RandomForestClassifier(n_estimators=50, random_state=42))
+        ])
+        
+        # Train model
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        model.fit(X_train, y_train)
+        
+        # Save model
+        try:
+            import os
+            os.makedirs('models', exist_ok=True)
+            joblib.dump(model, 'models/model.pkl')
+        except:
+            pass  # Silently fail if can't save
+        
+        return model
 
 def create_matplotlib_chart(chart_type, data, title, **kwargs):
     """Create matplotlib/seaborn charts"""
@@ -480,16 +508,11 @@ def main():
             st.subheader("🔧 How to Train the Model")
             st.code("""
 # Run this in your terminal to train the model:
-python analysis_notebook.py
+python src/train_model.py
 
-# Or run individual sections in Jupyter:
-jupyter notebook analysis_notebook.py
-            """)
-
-    # Footer
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("**📊 Term Deposit Predictor**")
-    st.sidebar.markdown("Built with Streamlit & scikit-learn")
+# Or run the Streamlit app - it will automatically train a model
+streamlit run streamlit_app.py
+            """, language="bash")
 
 if __name__ == "__main__":
-    main() 
+    main()
